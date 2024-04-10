@@ -112,7 +112,35 @@ You can access these metadata fields using [function interpolation](/docs/config
 			Default(0).
 			Advanced(),
 		service.NewTLSToggledField(tlsField),
+		oAuth2FieldSpec(),
 	)
+}
+
+func oAuth2FieldSpec() *service.ConfigField {
+	return service.NewObjectField(aFieldOAuth2,
+		service.NewBoolField(ao2FieldEnabled).
+			Description("Whether to use OAuth version 2 in requests.").
+			Default(false),
+
+		service.NewStringField(ao2FieldClientId).
+			Description("A value used to identify the client to the token provider.").
+			Default(""),
+
+		service.NewStringField(ao2FieldClientSecret).
+			Description("A secret used to establish ownership of the client key.").
+			Default("").Secret(),
+
+		service.NewURLField(ao2FieldTokenURL).
+			Description("The URL of the token provider.").
+			Default(""),
+
+		service.NewStringListField(ao2FieldScopes).
+			Description("A list of optional requested permissions.").
+			Default([]any{}).
+			Advanced(),
+	).
+		Description("Allows you to specify open authentication via OAuth version 2 using the client credentials token flow.").
+		Optional().Advanced()
 }
 
 func init() {
@@ -142,6 +170,8 @@ type amqp09Reader struct {
 	queue      string
 	tlsEnabled bool
 	tlsConf    *tls.Config
+
+	oAuthConf *OAuth2Config
 
 	prefetchCount int
 	prefetchSize  int
@@ -239,6 +269,10 @@ func amqp09ReaderFromParsed(conf *service.ParsedConfig, mgr *service.Resources) 
 		}
 	}
 
+	if a.oAuthConf, err = oauth2FromParsed(conf); err != nil {
+		return nil, err
+	}
+
 	return &a, nil
 }
 
@@ -257,7 +291,7 @@ func (a *amqp09Reader) Connect(ctx context.Context) (err error) {
 	var amqpChan *amqp.Channel
 	var consumerChan <-chan amqp.Delivery
 
-	if conn, err = a.reDial(a.urls); err != nil {
+	if conn, err = a.reDial(ctx, a.urls); err != nil {
 		return err
 	}
 
@@ -478,9 +512,9 @@ func (a *amqp09Reader) Close(ctx context.Context) error {
 }
 
 // reDial connection to amqp with one or more fallback URLs.
-func (a *amqp09Reader) reDial(urls []string) (conn *amqp.Connection, err error) {
+func (a *amqp09Reader) reDial(ctx context.Context, urls []string) (conn *amqp.Connection, err error) {
 	for _, u := range urls {
-		conn, err = a.dial(u)
+		conn, err = a.dial(ctx, u)
 		if err != nil {
 			if errors.Is(err, errAMQP09Connect) {
 				continue
@@ -493,10 +527,17 @@ func (a *amqp09Reader) reDial(urls []string) (conn *amqp.Connection, err error) 
 }
 
 // dial attempts to connect to amqp URL.
-func (a *amqp09Reader) dial(amqpURL string) (conn *amqp.Connection, err error) {
+func (a *amqp09Reader) dial(ctx context.Context, amqpURL string) (conn *amqp.Connection, err error) {
+
 	u, err := url.Parse(amqpURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid AMQP URL: %w", err)
+	}
+
+	if a.oAuthConf.Enabled {
+		token, _ := acquireToken(ctx, a.oAuthConf)
+
+		u.User = url.UserPassword("client_id", token)
 	}
 
 	if a.tlsEnabled {
@@ -518,5 +559,14 @@ func (a *amqp09Reader) dial(amqpURL string) (conn *amqp.Connection, err error) {
 		}
 	}
 
+	if a.oAuthConf.Enabled {
+		tokenRefresherTask := func(conn *amqp.Connection, token string) {
+			// if token is expired  then
+			renewedToken, _ := acquireToken(ctx, a.oAuthConf)
+			_ = conn.UpdateSecret(renewedToken, "Token refreshed!")
+		}
+
+		go tokenRefresherTask(conn, "my-JWT-token")
+	}
 	return conn, nil
 }

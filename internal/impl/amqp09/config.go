@@ -2,8 +2,16 @@ package amqp09
 
 const (
 	// Shared
-	urlsField = "urls"
-	tlsField  = "tls"
+	urlsField    = "urls"
+	tlsField     = "tls"
+	aFieldOAuth2 = "oauth2"
+
+	// OAuth2
+	ao2FieldEnabled      = "enabled"
+	ao2FieldClientId     = "client_id"
+	ao2FieldClientSecret = "client_secret"
+	ao2FieldTokenURL     = "token_url"
+	ao2FieldScopes       = "scopes"
 
 	// Input
 	queueField                   = "queue"

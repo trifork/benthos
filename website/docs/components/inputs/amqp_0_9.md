@@ -63,6 +63,12 @@ input:
       root_cas: ""
       root_cas_file: ""
       client_certs: []
+    oauth2:
+      enabled: false
+      client_id: ""
+      client_secret: ""
+      token_url: ""
+      scopes: []
 ```
 
 </TabItem>
@@ -377,5 +383,55 @@ password: foo
 
 password: ${KEY_PASSWORD}
 ```
+
+### `oauth2`
+
+Allows you to specify open authentication via OAuth version 2 using the client credentials token flow.
+
+
+Type: `object`  
+
+### `oauth2.enabled`
+
+Whether to use OAuth version 2 in requests.
+
+
+Type: `bool`  
+Default: `false`  
+
+### `oauth2.client_id`
+
+A value used to identify the client to the token provider.
+
+
+Type: `string`  
+Default: `""`  
+
+### `oauth2.client_secret`
+
+A secret used to establish ownership of the client key.
+:::warning Secret
+This field contains sensitive information that usually shouldn't be added to a config directly, read our [secrets page for more info](/docs/configuration/secrets).
+:::
+
+
+Type: `string`  
+Default: `""`  
+
+### `oauth2.token_url`
+
+The URL of the token provider.
+
+
+Type: `string`  
+Default: `""`  
+
+### `oauth2.scopes`
+
+A list of optional requested permissions.
+
+
+Type: `array`  
+Default: `[]`  
 
 

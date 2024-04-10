@@ -3,17 +3,24 @@ FROM golang:1.21 AS build
 ENV CGO_ENABLED=1
 ENV GOOS=linux
 
+
+# Prepare the build environment
+RUN go env -w GOCACHE=/go-cache; \
+    go env -w GOMODCACHE=/gomod-cache;
+
 WORKDIR /go/src/github.com/benthosdev/benthos/
 # Update dependencies: On unchanged dependencies, cached layer will be reused
 COPY go.* /go/src/github.com/benthosdev/benthos/
-RUN go mod download
+RUN --mount=type=cache,target=/gomod-cache \
+    go mod download
 
 RUN apt-get update && apt-get install -y --no-install-recommends libzmq3-dev
 
 # Build
 COPY . /go/src/github.com/benthosdev/benthos/
 
-RUN make TAGS=x_benthos_extra
+RUN --mount=type=cache,target=/gomod-cache --mount=type=cache,target=/go-cache \
+    make TAGS=x_benthos_extra
 
 # Pack
 FROM debian:latest

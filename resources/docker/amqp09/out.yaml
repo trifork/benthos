@@ -1,0 +1,42 @@
+http:
+  enabled: false
+
+logger:
+  level: DEBUG
+  format: logfmt
+  add_timestamp: true
+  static_fields:
+    "@service": benthos
+
+input:
+  label: source
+  amqp_0_9:
+    urls:
+      # wss == amqpwss:443
+      # ws == amqpws:80
+      #- amqp://enterprise-messaging-messaging-gateway.cfapps.eu10.hana.ondemand.com
+      #- amqps://enterprise-messaging-messaging-gateway.cfapps.eu10.hana.ondemand.com
+      - amqpwss://enterprise-messaging-messaging-gateway.cfapps.eu10.hana.ondemand.com/protocols/amqp10ws
+    queue: "triform/demo/s4/cheetah"
+    consumer_tag: benthos_consumer
+    oauth2:
+      enabled: true
+      token_url: https://invokerscf.authentication.eu10.hana.ondemand.com/oauth/token
+      scopes:
+        - ""
+      client_id: "sb-default-5cb2acd3-bb26-4281-b23b-084e4e7830b0-clone!b8513|xbem-service-broker-!b2436"
+      client_secret: "a4c7d2ca-056e-4b4d-8176-4ca539c4917c$3YyCAkVUQ7Sgp1hWA3JZp158TSeRlj6oelHgWZWHmyY="
+
+pipeline:
+  processors:
+    - bloblang: |
+        root = this
+
+    - catch:
+        - log:
+            level: ERROR
+            message: ${! error() }
+        - bloblang: root = deleted()
+
+output:
+  stdout: {}

@@ -9,3 +9,31 @@ metrics:
 
 logger:
   format: json
+
+input:
+  label: "Input STDIN"
+  type: stdin
+
+processors:
+  - processor1:
+    label: "Processor 1"
+    type: filter
+    details:
+      detail1: "Value1"
+      detail2: "Value2"
+    processors:
+      - processor1:
+        type: filter
+        details:
+          detail1: "Value1"
+          detail2: "Value2"
+
+  - processor2:
+    label: "Processor 2"	
+    type: modification
+    details:
+      detail1: "Value3"
+      detail2: "Value4"
+output:
+  label: "Output STDOUT"
+  type: stdout

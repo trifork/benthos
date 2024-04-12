@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/goccy/go-graphviz"
 	"github.com/gorilla/mux"
 	yaml "gopkg.in/yaml.v3"
 
@@ -94,6 +96,35 @@ func New(
 
 	handlePing := func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("pong"))
+	}
+
+	handleGraph := func(w http.ResponseWriter, r *http.Request) {
+
+		rootNode, ok := wholeConf.(yaml.Node)
+
+		if !ok {
+			w.WriteHeader(http.StatusBadGateway)
+		}
+
+		g := graphviz.New()
+		graph, err := g.Graph()
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+		}
+		defer graph.Close()
+
+		counter := 0
+		addNodesAndEdges(graph, nil, &rootNode, &counter, rootNode.Kind)
+
+		var buf bytes.Buffer
+		if err := g.Render(graph, "dot", &buf); err != nil {
+			//t.log.Fatal(err)
+		}
+		fmt.Println(buf.String())
+
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write(buf.Bytes())
+		//fmt.Fprintln(w, output)
 	}
 
 	handleStackTrace := func(w http.ResponseWriter, r *http.Request) {
@@ -199,6 +230,7 @@ func New(
 	}
 
 	t.RegisterEndpoint("/ping", "Ping me.", handlePing)
+	t.RegisterEndpoint("/graph", "Returns the job as a graph.", handleGraph)
 	t.RegisterEndpoint("/version", "Returns the service version.", handleVersion)
 	t.RegisterEndpoint("/endpoints", "Returns this map of endpoints.", handleEndpoints)
 

@@ -1,39 +1,102 @@
-# This is the default configuration file shipped with docker builds. It's
-# extremely unlikely that a user would want to run Benthos without a custom
-# configuration, so the purpose of this file is mostly to be a placeholder.
+logger:
+  level: DEBUG
 http:
+  address: 0.0.0.0:4195
   enabled: true
+  root_path: /
+  debug_endpoints: true
+
+input:
+  generate:
+    interval: "1h"
+    mapping: root = ""
+
+  processors:
+    # First HTTP request to get the total count
+    - branch:
+        request_map: |
+          root = ""
+        processors:
+          - http:
+              url: "${ODATA_URL}${ODATA_ENTIYSET_NAME}/$count"
+              verb: GET
+        result_map: "meta total_count = content().string().int32()"
+      label: "getcount"
+
+    # Parse the count and calculate pages
+    - bloblang: |
+        let page_size = 5 
+        let total_pages = (@total_count / $page_size).ceil()
+
+        meta total_pages = $total_pages
+        meta current_page = 0
+        meta page_size = $page_size
+
+    - log:
+        level: INFO
+        message: meta
+        fields_mapping: |-
+          root.meta = meta("")
+
+    # Processor to fetch and cache an OAuth2 token
+    - branch:
+        request_map: |
+          root = "client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}&grant_type=client_credentials&scope=kafka"
+        processors:
+          - http:
+              url: "http://keycloak:1852/realms/local-development/protocol/openid-connect/token"
+              verb: POST
+              #dump_request_log_level: TRACE
+              headers:
+                Content-Type: application/x-www-form-urlencoded
+          - bloblang: |- # extract access_token
+              root = this
+              root = json().access_token
+          - log:
+              message: "Storing new Keycloak token in cache."
+              level: DEBUG
+          - cache:
+              resource: oauth_token_cache
+              operator: set
+              key: "oauth_token"
+              value: "${! content() }"
+      label: "gettoken"
+
+    - unarchive:
+        format: json_array
+      label: "spread"
+    - mapping: |
+        import "./odata_maps.blobl"
+        root = this.apply("convert_odates")
+      label: "convert_odates"
+
+    - mapping: |
+        root = json()
+
+        if root.to_Item.results.type() == "array" {
+          root.to_Item = root.to_Item.results
+        }
+      label: "fix_toitems"
+
+output:
+  #stdout: {}
+  #file:
+  #  path: /tmp/output.json
+  #  codec: lines
+  kafka:
+    addresses: ["kafka:19092"]
+    topic: "${! json().__metadata.type }2"
+    key: ${! json().__metadata.id }
+    sasl:
+      mechanism: OAUTHBEARER
+      token_cache: "oauth_token_cache"
+      token_key: "oauth_token"
 
 metrics:
   prometheus: {}
 
-logger:
-  format: json
-
-input:
-  label: "Input STDIN"
-  type: stdin
-
-processors:
-  - processor1:
-    label: "Processor 1"
-    type: filter
-    details:
-      detail1: "Value1"
-      detail2: "Value2"
-    processors:
-      - processor1:
-        type: filter
-        details:
-          detail1: "Value1"
-          detail2: "Value2"
-
-  - processor2:
-    label: "Processor 2"	
-    type: modification
-    details:
-      detail1: "Value3"
-      detail2: "Value4"
-output:
-  label: "Output STDOUT"
-  type: stdout
+cache_resources:
+  - label: oauth_token_cache
+    memory:
+      default_ttl: 30m # todo
+      init_values: {}

@@ -114,7 +114,7 @@ func New(
 		defer graph.Close()
 
 		counter := 0
-		addNodesAndEdges(graph, nil, &rootNode, &counter, rootNode.Kind)
+		addNodesAndEdgesOld(graph, nil, &rootNode, &counter, rootNode.Kind)
 
 		var buf bytes.Buffer
 		if err := g.Render(graph, "dot", &buf); err != nil {

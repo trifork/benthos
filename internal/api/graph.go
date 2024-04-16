@@ -43,16 +43,7 @@ func addNodesAndEdges(g *cgraph.Graph, parent *cgraph.Node, node *yaml.Node, cou
 	var err error
 
 	if node.Kind == yaml.ScalarNode && len(node.Content) == 0 {
-		//return graphNode // we do not care about keyvals
-	}
-	//skip := false
-	// Create a node based on node type and value
-	if things := []string{"input", "processors", "output", ""}; !slices.Contains(things, label) && parent != nil {
-		fmt.Printf("skipped: v=%v t=%v k=%v l=%v c=%d c2=%d\n", label, node.Tag, node.Kind, node.Line, *counter, len(node.Content))
-		//return graphNode
-		//skip = true
-	} else {
-		fmt.Printf("passed: v=%v t=%v k=%v l=%v c=%d c2=%d\n", label, node.Tag, node.Kind, node.Line, *counter, len(node.Content))
+		return graphNode // we do not care about keyvals
 	}
 
 	if parent == nil {
@@ -72,6 +63,10 @@ func addNodesAndEdges(g *cgraph.Graph, parent *cgraph.Node, node *yaml.Node, cou
 	switch node.Kind {
 	case yaml.DocumentNode, yaml.SequenceNode:
 		for _, child := range node.Content {
+			label := child.Value
+			if newLabel, ok := getLabel(child); ok {
+				label = newLabel
+			}
 			addNodesAndEdges(g, graphNode, child, counter, label)
 		}
 
@@ -88,7 +83,30 @@ func addNodesAndEdges(g *cgraph.Graph, parent *cgraph.Node, node *yaml.Node, cou
 				label = newLabel
 			}
 
-			addNodesAndEdges(g, graphNode, valueNode, counter, label)
+			//check if all children are scalar nodes and they have no children
+			skip := true
+			for _, child := range valueNode.Content {
+				if label == "processors" {
+					skip = false
+					break
+				}
+				if child.Kind != yaml.ScalarNode && child.Kind != yaml.MappingNode {
+					skip = false
+					break
+				}
+				if len(child.Content) > 0 {
+					skip = false
+					break
+				}
+			}
+			//skip = false
+
+			//if len(all(node.Content, yaml.ScalarNode)) != len(node.Content) {
+			if !skip {
+				addNodesAndEdges(g, graphNode, valueNode, counter, label)
+			}
+			//}
+
 		}
 	}
 
@@ -102,6 +120,8 @@ func getLabel(node *yaml.Node) (string, bool) {
 			keyNode, valueNode := node.Content[i], node.Content[i+1]
 			if keyNode.Value == "label" && valueNode.Kind == yaml.ScalarNode {
 				return valueNode.Value, true
+			} else {
+				return keyNode.Value, true
 			}
 		}
 	}

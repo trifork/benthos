@@ -1,3 +1,4 @@
+#todo: error handling and cached on token + metadata. Possibly count. Ensure sorted results
 logger:
   level: DEBUG
 http:
@@ -5,98 +6,238 @@ http:
   enabled: true
   root_path: /
   debug_endpoints: true
-
 input:
-  generate:
-    interval: "1h"
-    mapping: root = ""
+  read_until:
+    restart_input: true
+    check: # when it should stop
+      #!blobl
+      meta("current_page").or("0").int32() >= meta("total_pages").or("0").int32()
+    processors:
+      - branch:
+          processors:
+            - cache:
+                operator: get
+                resource: current_page
+                key: "current_page"
+          result_map: "meta current_page = content().string()"
+      # First HTTP request to get the total count
+      - branch:
+          request_map: 'root = ""'
+          processors:
+            - http:
+                url: "${ODATA_URL}${ODATA_ENTIYSET_URL}/$count"
+                headers:
+                  APIKey: ${ODATA_APIKEY}
+                verb: GET
+          result_map: "meta total_count = content().string().int32()"
+        label: "getcount"
 
-  processors:
-    # First HTTP request to get the total count
-    - branch:
-        request_map: |
-          root = ""
-        processors:
-          - http:
-              url: "${ODATA_URL}${ODATA_ENTIYSET_NAME}/$count"
-              verb: GET
-        result_map: "meta total_count = content().string().int32()"
-      label: "getcount"
+      # Parse the count and calculate pages
+      - bloblang: |
+          #!blobl
+          let page_size = env("PAGE_SIZE").or("1000").number()
+          let total_pages = (@total_count / $page_size).ceil()
 
-    # Parse the count and calculate pages
-    - bloblang: |
-        let page_size = 5 
-        let total_pages = (@total_count / $page_size).ceil()
+          meta total_pages = $total_pages
+          meta page_size = $page_size
 
-        meta total_pages = $total_pages
-        meta current_page = 0
-        meta page_size = $page_size
+          meta batch_counter = 0
+          meta batch_size = env("BATCH_SIZE").or("0").number()
 
-    - log:
-        level: INFO
-        message: meta
-        fields_mapping: |-
-          root.meta = meta("")
+      - label: "startinglog"
+        log:
+          level: INFO
+          message: meta
+          fields_mapping: |-
+            root.meta = meta("")
 
-    # Processor to fetch and cache an OAuth2 token
-    - branch:
-        request_map: |
-          root = "client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}&grant_type=client_credentials&scope=kafka"
-        processors:
-          - http:
-              url: "http://keycloak:1852/realms/local-development/protocol/openid-connect/token"
-              verb: POST
-              #dump_request_log_level: TRACE
-              headers:
-                Content-Type: application/x-www-form-urlencoded
-          - bloblang: |- # extract access_token
-              root = this
-              root = json().access_token
+      # Processor to fetch and cache an OAuth2 token
+      - branch:
+          request_map: |
+            root = "client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}&grant_type=client_credentials&scope=kafka"
+          processors:
+            - http:
+                url: "${TOKEN_URL}"
+                verb: POST
+                #dump_request_log_level: TRACE
+                headers:
+                  Content-Type: application/x-www-form-urlencoded
+            - bloblang: |- # extract access_token
+                root = this
+                root = json().access_token
+            - log:
+                message: "Storing new Keycloak token in cache."
+                level: DEBUG
+            - cache:
+                resource: oauth_token_cache
+                operator: set
+                key: "oauth_token"
+                value: "${! content() }"
+        label: "gettoken"
+
+      # Processor to fetch metadata schema
+      - processors:
+          - mapping: meta schema = {}
+          - branch:
+              request_map: 'root = ""'
+              processors:
+                - http:
+                    url: ${ODATA_URL}${! (env("ODATA_ENTIYSET_URL").split("/").index(0)) }/$metadata
+                    headers:
+                      APIKey: ${ODATA_APIKEY}
+                      Accept: "application/xml"
+                    verb: GET
+              result_map: "meta schema = content()"
+            label: "getschemafromhttp"
           - log:
-              message: "Storing new Keycloak token in cache."
               level: DEBUG
-          - cache:
-              resource: oauth_token_cache
-              operator: set
-              key: "oauth_token"
-              value: "${! content() }"
-      label: "gettoken"
+              message: schema
+              fields_mapping: |-
+                root.metaSize = @schema.length()
+          - branch:
+              request_map: "root = @schema"
+              processors:
+                - xml:
+                    operator: "to_json"
+                - jq: # filter out the schema we want and remove '-' from the Keys
+                    query: '.Edmx.DataServices.Schema.EntityType | map(select(."-Name" == "${ODATA_ENTIYSET_NAME}"))[0] | walk(if type == "object" then with_entries( .key |= (if . | startswith("-") then .[1:] else . end) ) else . end)'
+              result_map: "meta schema = json()"
+          - noop: {}
+            label: "printschema" # test injection
+        label: "getschema"
 
-    - unarchive:
-        format: json_array
-      label: "spread"
-    - mapping: |
-        import "./odata_maps.blobl"
-        root = this.apply("convert_odates")
-      label: "convert_odates"
+      - mapping: meta messages = []
+      - while:
+          #at_least_once: true
+          max_loops: ${BATCH_SIZE}
+          check: |
+            #!blobl
+            meta("current_page").int32() < meta("total_pages").int32() && (meta("batch_size") == 0 || meta("batch_counter").int32() < meta("batch_size").int32())
 
-    - mapping: |
-        root = json()
+          processors:
+            - try:
+                - mapping: 'meta skip = metadata("current_page").int32() * meta("page_size").int32()'
+                - http:
+                    url: >-
+                      ${ODATA_URL}${ODATA_ENTIYSET_URL}${! ("?$skip="+meta("skip")+"&$top="+meta("page_size")) }
+                    verb: GET
+                    headers:
+                      Accept: "application/json"
+                      APIKey: ${ODATA_APIKEY}
+                    basic_auth:
+                      enabled: ${ODATA_USEBASICAUTH}
+                      username: ${ODATA_USERNAME}
+                      password: ${ODATA_PASSWORD}
+                  label: "getpage"
+                - mapping: |
+                    #!blobl
+                    meta current_page = meta("current_page").number() + 1
+                    meta batch_counter = meta("batch_counter").number() + 1
+                    meta messages = @messages.merge(this.d.results)
+                  label: "pagenumberbump"
+                - label: "getpageslog"
+                  log:
+                    level: DEBUG
+                    message: "Message count for page"
+                    fields_mapping: |
+                      root.current_page = @current_page
+                      root.messageCount = @messages.length()
+                      root.contentType = @messages.type()
+        label: "getpages"
+      - mapping: root = @messages
+        label: "getresults"
 
-        if root.to_Item.results.type() == "array" {
-          root.to_Item = root.to_Item.results
-        }
-      label: "fix_toitems"
+      - label: "resultslog"
+        log:
+          level: DEBUG
+          message: "Message count"
+          fields_mapping: |
+            root.messageCount = json().length()
+            root.contentType = json().type()
+
+      - unarchive:
+          format: json_array
+        label: "spread"
+
+      - switch:
+          - check: this.to_Item.results.type() == "array"
+            processors:
+              - mutation: |
+                  #!blobl
+                  root = [this.without("to_items")].merge(this.to_items)
+              - unarchive:
+                  format: json_array
+        label: "fix_toitems"
+
+      - metric:
+          name: expanded_items
+          type: counter
+          labels:
+            type: "${! json().__metadata.type }"
+
+      - label: "convert_fieldtypes"
+        processors:
+          - label: "convert_fieldtypes_msg"
+            noop: {} # test injection
+
+          - mutation: |
+              #!blobl
+              import "./app/odata_maps.blobl"
+
+              root = root.map_each(item -> if @schema.Property.any(schemaField -> schemaField.Name == item.key) {
+                match @schema.Property.filter(schemaField -> schemaField.Name == item.key).index(0) {
+                    this.Type == "Edm.DateTime" => item.value.apply("convert_odates"),
+                    this.Type == "Edm.DateTimeOffset" => item.value.apply("convert_odates"),
+                    this.Type == "Edm.Time" => item.value.apply("convert_odates"),
+                    this.Type == "Edm.String" => item.value,
+                    this.Type == "Edm.Boolean" => item.value,
+                    this.Type == "Edm.Int32" => item.value.int32().catch(0),
+                    this.Type == "Edm.Int64" => item.value.int64().catch(0),
+                    this.Type == "Edm.Decimal" => item.value.number(),
+                    this.Type == "Edm.Double" => item.value.float64(),
+                  _ => item.value, # works for strings and booleans
+                }
+              } else {
+                item.value
+              })
+
+      - metric:
+          name: convert_fieldtypes
+          type: counter
+          labels:
+            type: "${! json().__metadata.type }"
+
+      - cache:
+          operator: set
+          resource: current_page
+          key: "current_page"
+          value: '${! meta("current_page") }'
+
+    # todo: dlq? metrics?
 
 output:
   #stdout: {}
   #file:
   #  path: /tmp/output.json
   #  codec: lines
-  kafka:
-    addresses: ["kafka:19092"]
-    topic: "${! json().__metadata.type }2"
-    key: ${! json().__metadata.id }
-    sasl:
-      mechanism: OAUTHBEARER
-      token_cache: "oauth_token_cache"
-      token_key: "oauth_token"
+  resource: kafka_sink
+  processors:
+    - bloblang: |
+        #!blobl
+        # Remove all existing metadata from messages
+        meta = deleted()
 
 metrics:
-  prometheus: {}
+  prometheus:
+    add_process_metrics: true
 
 cache_resources:
   - label: oauth_token_cache
     memory:
       default_ttl: 30m # todo
-      init_values: {}
+      init_values:
+        oauth_token: ""
+  - label: current_page
+    memory:
+      init_values:
+        current_page: 0

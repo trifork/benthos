@@ -18,3 +18,6 @@ services:
     volumes:
       - ./cache.yaml:/benthos.yaml
     network_mode: host
+    environment:
+      - USERNAME=apikey
+      - PASSWORD=${OS_API_KEY}

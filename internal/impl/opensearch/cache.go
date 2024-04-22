@@ -101,12 +101,12 @@ func (m *opensearchCache) Get(ctx context.Context, key string) ([]byte, error) {
 			DocumentID: key,
 		})
 
-		if err != nil {
-			return nil, fmt.Errorf("error getting document %s: %v", key, err)
-		}
-
 		if !documentResponse.Found {
 			return nil, service.ErrKeyNotFound
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("error getting document %s: %v", key, err)
 		}
 
 		searchHit = documentResponse.Source

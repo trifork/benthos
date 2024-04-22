@@ -1,0 +1,23 @@
+services:
+  benthos-opensearch-oauth2:
+    image: jeffail/benthos:local
+    build:
+      context: ../../../
+      dockerfile: ./resources/docker/Dockerfile
+    command: [ '-w', '-c', '/benthos.yaml' ]
+    volumes:
+      - ./oauth2.yaml:/benthos.yaml
+    network_mode: host
+
+  benthos-opensearch-cachetest:
+    image: jeffail/benthos:local
+    build:
+      context: ../../../
+      dockerfile: ./resources/docker/Dockerfile
+    command: [ 'test', '/benthos.yaml' ]
+    volumes:
+      - ./cache.yaml:/benthos.yaml
+    network_mode: host
+    environment:
+      - USERNAME=apikey
+      - PASSWORD=${OS_API_KEY}

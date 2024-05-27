@@ -1,0 +1,36 @@
+http:
+  enabled: false
+
+input:
+  label: source
+  generate:
+    interval: 5s
+    mapping: |
+      root.ID = uuid_v4()
+      root.Name = [ "frosty", "spot", "oodles" ].index(random_int() % 3)
+      root.Gooeyness = (random_int() % 100) / 100
+      root.Bouncing = random_int() % 2 == 0
+
+pipeline:
+  processors:
+    - bloblang: |
+        root = this
+        root.ID = this.ID
+        root.ReNamed = this.Name
+        root.Gooeyness = this.Gooeyness
+        root.Bouncing = this.Bouncing
+
+
+output:
+  label: sink
+  type: amqp_1
+  amqp_1:
+    #target_address: "/iothub-ehub-iothubdemo-58177125-3887de637f/queue-name"
+    target_address: "/devices/1/messages/events" #send device-to-cloud telemetry data
+    urls: 
+      - "amqps://ihsuprodamres031dednamespace.servicebus.windows.net/iothub-ehub-iothubdemo-58177125-3887de637f"
+      #- "sb://ihsuprodamres031dednamespace.servicebus.windows.net/;SharedAccessKeyName=iothubowner;SharedAccessKey=7nqmfjCWvpPY9KpijN1CiVIcJ3b3N4NM4AIoTPV/Rts=;EntityPath=iothub-ehub-iothubdemo-58177125-3887de637f"
+    sasl:
+      mechanism: plain
+      user: "iothubowner"
+      password: "7nqmfjCWvpPY9KpijN1CiVIcJ3b3N4NM4AIoTPV/Rts="

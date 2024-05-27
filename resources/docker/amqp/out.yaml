@@ -1,0 +1,38 @@
+http:
+  address: 0.0.0.0:4195
+  enabled: true
+  root_path: /benthos
+  debug_endpoints: false
+
+logger:
+  level: DEBUG
+  format: logfmt
+  add_timestamp: true
+  static_fields:
+    "@service": benthos
+
+input:
+  label: source
+  type: amqp_1
+  amqp_1:
+    source_address: "/iothub-ehub-iothubdemo-58177125-3887de637f/ConsumerGroups/$Default/Partitions/0"
+    url: "amqps://ihsuprodamres031dednamespace.servicebus.windows.net"
+    #url: Endpoint=sb://ihsuprodamres031dednamespace.servicebus.windows.net/;SharedAccessKeyName=iothubowner;SharedAccessKey=7nqmfjCWvpPY9KpijN1CiVIcJ3b3N4NM4AIoTPV/Rts=;EntityPath=iothub-ehub-iothubdemo-58177125-3887de637f
+    sasl:
+      mechanism: plain
+      user: "iothubowner"
+      password: "7nqmfjCWvpPY9KpijN1CiVIcJ3b3N4NM4AIoTPV/Rts="
+
+pipeline:
+  processors:
+    - bloblang: |
+        root = this
+
+    - catch:
+        - log:
+            level: ERROR
+            message: ${! error() }
+        - bloblang: root = deleted()
+
+output:
+  stdout: {}

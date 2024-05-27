@@ -19,3 +19,25 @@ services:
     volumes:
       - ./out.yaml:/benthos.yaml
     network_mode: host
+  
+  kafka-to-http:
+    image: jeffail/benthos:local
+    build:
+      context: ../../../
+      dockerfile: ./resources/docker/Dockerfile
+    command: [ '-w', '-c', '/benthos.yaml' ]
+    ports:
+      - "4195:4195"
+    volumes:
+      - ./http.yaml:/benthos.yaml
+    network_mode: host
+
+  http-to-kafka:
+    image: jeffail/benthos:local
+    build:
+      context: ../../../
+      dockerfile: ./resources/docker/Dockerfile
+    command: [ '-w', '-c', '/benthos.yaml' ]
+    volumes:
+      - ./stream_in.yaml:/benthos.yaml
+    network_mode: host

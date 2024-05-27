@@ -24,12 +24,13 @@ This input adds the following metadata fields to each message:
 
 ` + "``` text" + `
 - nats_subject
+- nats_reply_subject
 - All message headers (when supported by the connection)
 ` + "```" + `
 
 You can access these metadata fields using [function interpolation](/docs/configuration/interpolation#bloblang-queries).
 
-` + ConnectionNameDescription() + authDescription()).
+` + connectionNameDescription() + authDescription()).
 		Fields(connectionHeadFields()...).
 		Field(service.NewStringField("subject").
 			Description("A subject to consume from. Supports wildcards for consuming multiple subjects. Either a subject or stream must be specified.").
@@ -49,7 +50,7 @@ You can access these metadata fields using [function interpolation](/docs/config
 			Default(nats.DefaultSubPendingMsgsLimit).
 			LintRule(`root = if this < 0 { ["prefetch count must be greater than or equal to zero"] }`)).
 		Fields(connectionTailFields()...).
-		Field(span.ExtractTracingSpanMappingDocs().Version(tracingVersion))
+		Field(inputTracingDocs())
 }
 
 func init() {
@@ -198,6 +199,7 @@ func (n *natsReader) Read(ctx context.Context) (*service.Message, service.AckFun
 
 	bmsg := service.NewMessage(msg.Data)
 	bmsg.MetaSetMut("nats_subject", msg.Subject)
+	bmsg.MetaSetMut("nats_reply_subject", msg.Reply)
 	// process message headers if server supports the feature
 	if natsConn.HeadersSupported() {
 		for key := range msg.Header {

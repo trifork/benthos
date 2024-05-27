@@ -1,7 +1,7 @@
 ---
-title: nats_kv
-slug: nats_kv
-type: cache
+title: nats_request_reply
+slug: nats_request_reply
+type: processor
 status: experimental
 categories: ["Services"]
 ---
@@ -18,7 +18,7 @@ import TabItem from '@theme/TabItem';
 :::caution EXPERIMENTAL
 This component is experimental and therefore subject to change or removal outside of major version releases.
 :::
-Cache key/values in a NATS key-value bucket.
+Sends a message to a NATS subject and expects a reply, from a NATS subscriber acting as a responder, back.
 
 Introduced in version 4.27.0.
 
@@ -33,9 +33,14 @@ Introduced in version 4.27.0.
 ```yml
 # Common config fields, showing default values
 label: ""
-nats_kv:
+nats_request_reply:
   urls: [] # No default (required)
-  bucket: my_kv_bucket # No default (required)
+  subject: foo.bar.baz # No default (required)
+  headers: {}
+  metadata:
+    include_prefixes: []
+    include_patterns: []
+  timeout: 3s
 ```
 
 </TabItem>
@@ -44,9 +49,15 @@ nats_kv:
 ```yml
 # All config fields, showing default values
 label: ""
-nats_kv:
+nats_request_reply:
   urls: [] # No default (required)
-  bucket: my_kv_bucket # No default (required)
+  subject: foo.bar.baz # No default (required)
+  inbox_prefix: _INBOX_joe # No default (optional)
+  headers: {}
+  metadata:
+    include_prefixes: []
+    include_patterns: []
+  timeout: 3s
   tls:
     enabled: false
     skip_cert_verify: false
@@ -63,6 +74,22 @@ nats_kv:
 
 </TabItem>
 </Tabs>
+
+### Metadata
+
+This input adds the following metadata fields to each message:
+
+```text
+- nats_subject
+- nats_sequence_stream
+- nats_sequence_consumer
+- nats_num_delivered
+- nats_num_pending
+- nats_domain
+- nats_timestamp_unix_nano
+```
+
+You can access these metadata fields using [function interpolation](/docs/configuration/interpolation#bloblang-queries).
 
 ### Connection Name
 
@@ -121,9 +148,10 @@ urls:
   - nats://username:password@127.0.0.1:4222
 ```
 
-### `bucket`
+### `subject`
 
-The name of the KV bucket.
+A subject to write to.
+This field supports [interpolation functions](/docs/configuration/interpolation#bloblang-queries).
 
 
 Type: `string`  
@@ -131,8 +159,97 @@ Type: `string`
 ```yml
 # Examples
 
-bucket: my_kv_bucket
+subject: foo.bar.baz
+
+subject: ${! meta("kafka_topic") }
+
+subject: foo.${! json("meta.type") }
 ```
+
+### `inbox_prefix`
+
+Set an explicit inbox prefix for the response subject
+
+
+Type: `string`  
+
+```yml
+# Examples
+
+inbox_prefix: _INBOX_joe
+```
+
+### `headers`
+
+Explicit message headers to add to messages.
+This field supports [interpolation functions](/docs/configuration/interpolation#bloblang-queries).
+
+
+Type: `object`  
+Default: `{}`  
+
+```yml
+# Examples
+
+headers:
+  Content-Type: application/json
+  Timestamp: ${!meta("Timestamp")}
+```
+
+### `metadata`
+
+Determine which (if any) metadata values should be added to messages as headers.
+
+
+Type: `object`  
+
+### `metadata.include_prefixes`
+
+Provide a list of explicit metadata key prefixes to match against.
+
+
+Type: `array`  
+Default: `[]`  
+
+```yml
+# Examples
+
+include_prefixes:
+  - foo_
+  - bar_
+
+include_prefixes:
+  - kafka_
+
+include_prefixes:
+  - content-
+```
+
+### `metadata.include_patterns`
+
+Provide a list of explicit metadata key regular expression (re2) patterns to match against.
+
+
+Type: `array`  
+Default: `[]`  
+
+```yml
+# Examples
+
+include_patterns:
+  - .*
+
+include_patterns:
+  - _timestamp_unix$
+```
+
+### `timeout`
+
+A duration string is a possibly signed sequence of decimal numbers, each with optional fraction and a unit suffix, such as 300ms, -1.5h or 2h45m. Valid time units are ns, us (or µs), ms, s, m, h.
+
+
+Type: `string`  
+Default: `"3s"`  
 
 ### `tls`
 

@@ -17,6 +17,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.21.1
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.21.0
 	github.com/IBM/sarama v1.42.2
+	github.com/Jeffail/checkpoint v1.0.1
 	github.com/Jeffail/gabs/v2 v2.7.0
 	github.com/Jeffail/grok v1.1.0
 	github.com/Masterminds/squirrel v1.5.4
@@ -139,7 +140,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/crypto v0.21.0
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
-	golang.org/x/net v0.22.0
+	golang.org/x/net v0.23.0
 	golang.org/x/oauth2 v0.17.0
 	golang.org/x/sync v0.6.0
 	golang.org/x/text v0.14.0

@@ -1,0 +1,33 @@
+http:
+  enabled: false
+
+input:
+  label: ""
+  http_client:
+    url: "http://localhost:4195/kafka/get/stream"
+    verb: GET
+    headers: {}
+    rate_limit: ""
+    timeout: 5s
+    payload: ""
+    drop_on: 
+      - 408 # timeout e.g no more data.
+    stream:
+      enabled: true
+      reconnect: true
+      scanner:
+        lines: {} # todo
+    auto_replay_nacks: true
+
+output:
+  label: sink
+  kafka_franz:
+    seed_brokers: [localhost:9092] # No default (required)
+    topic: localstream_in # No default (required)
+    key: "" # No default (optional)
+    sasl:
+      - mechanism: OAUTHBEARER
+        tokenEndpoint: http://localhost:1852/realms/local-development/protocol/openid-connect/token
+        scope: "kafka"
+        clientId: "default-access"
+        clientSecret: "default-access-secret"
